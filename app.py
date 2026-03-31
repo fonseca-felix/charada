@@ -12,7 +12,15 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Importa o módulo de autenticação (auth.py deve estar na mesma pasta)
-from auth import gerar_token, token_obrigatorio
+try:
+    from auth import gerar_token, token_obrigatorio
+except ImportError as e:
+    print(f"Erro ao importar auth: {e}")
+    # Define funções placeholder para evitar crash
+    def gerar_token(usuario):
+        return "token_placeholder"
+    def token_obrigatorio(func):
+        return func
 
 # --- 1. CONFIGURAÇÃO DO FIREBASE (NUVEM + LOCAL) ---
 db = None
@@ -33,6 +41,8 @@ try:
             firebase_admin.initialize_app(cred)
             db = firestore.client()
             print("Firebase: Conectado via arquivo local")
+        else:
+            print("Firebase: Nenhuma credencial encontrada")
             
 except Exception as e:
     print(f"ERRO de conexão Firebase: {e}")
@@ -41,12 +51,12 @@ app = Flask(__name__)
 
 # --- 2. CONFIGURAÇÃO DE SEGURANÇA ---
 # Usa a sua frase: 'feliz-namorado-da-majuzinha'
-app.config["SECRET_KEY"] = os.environ.get('SECRET_KEY')
-CORS(app, origins="*")
+app.config["SECRET_KEY"] = os.environ.get('SECRET_KEY', 'feliz-namorado-da-majuzinha')
+CORS(app)  # Simplificado
 
 # Admin Creds (Vercel Variables)
-ADMIN_USERNAME = os.getenv("ADMIN_USERNAME")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
 
 # --- 3. ROTAS DE AUTENTICAÇÃO ---
 
@@ -54,7 +64,8 @@ ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
 def login():
     try:
         dados = request.get_json()
-        if not dados: return jsonify({'error': 'Sem dados'}), 400
+        if not dados: 
+            return jsonify({'error': 'Sem dados'}), 400
         
         username = dados.get('username')
         password = dados.get('password')
@@ -85,7 +96,8 @@ def root():
 @app.route('/charadas', methods=['GET'])
 def get_charadas():
     try:
-        if not db: return jsonify({'error': 'DB Offline'}), 500
+        if not db:
+            return jsonify({'error': 'DB Offline', 'message': 'Firebase não configurado'}), 500
         charadas = []
         docs = db.collection('charadas').stream()
         for doc in docs:
@@ -99,9 +111,11 @@ def get_charadas():
 @app.route('/charadas/aleatoria', methods=['GET'])
 def get_charadas_random():
     try:
-        if not db: return jsonify({'error': 'DB Offline'}), 500
+        if not db:
+            return jsonify({'error': 'DB Offline'}), 500
         docs = list(db.collection('charadas').stream())
-        if not docs: return jsonify({'error': 'Vazio'}), 404
+        if not docs:
+            return jsonify({'error': 'Vazio'}), 404
         escolhida = random.choice(docs)
         item = escolhida.to_dict()
         item['id'] = escolhida.id
@@ -112,7 +126,8 @@ def get_charadas_random():
 @app.route('/charadas/<id>', methods=['GET'])
 def get_charada_by_id(id):
     try:
-        if not db: return jsonify({'error': 'DB Offline'}), 500
+        if not db:
+            return jsonify({'error': 'DB Offline'}), 500
         doc = db.collection('charadas').document(id).get()
         if doc.exists:
             item = doc.to_dict()
@@ -128,7 +143,8 @@ def get_charada_by_id(id):
 @token_obrigatorio
 def create_charada():
     try:
-        if not db: return jsonify({'error': 'DB Offline'}), 500
+        if not db:
+            return jsonify({'error': 'DB Offline'}), 500
         dados = request.get_json()
         
         # Lógica de ID Sequencial
@@ -150,7 +166,8 @@ def create_charada():
 @token_obrigatorio
 def create_multiplas_charadas():
     try:
-        if not db: return jsonify({'error': 'DB Offline'}), 500
+        if not db:
+            return jsonify({'error': 'DB Offline'}), 500
         lista = request.get_json().get('charadas', [])
         
         cont_ref = db.collection('contador').document('controle_id')
@@ -170,7 +187,8 @@ def create_multiplas_charadas():
 @token_obrigatorio
 def delete_charada(id):
     try:
-        if not db: return jsonify({'error': 'DB Offline'}), 500
+        if not db:
+            return jsonify({'error': 'DB Offline'}), 500
         db.collection('charadas').document(id).delete()
         return jsonify({'message': f'Charada {id} removida'}), 200
     except Exception as e:
@@ -184,5 +202,6 @@ def status():
         'ambiente': 'producao' if os.environ.get("VERCEL") else 'local'
     }), 200
 
-# Exportação para Vercel
-app.debug = True
+# Para desenvolvimento local
+if __name__ == '__main__':
+    app.run(debug=True)

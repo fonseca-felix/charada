@@ -4,12 +4,13 @@ from functools import wraps
 from flask import request, jsonify, current_app
 
 def gerar_token(usuario):
+    secret_key = current_app.config.get("SECRET_KEY", "feliz-namorado-da-majuzinha")
     payload = {
         "usuario": usuario,
         "perfil": "adm",
         "exp": datetime.now(timezone.utc) + timedelta(hours=1)
     }
-    return jwt.encode(payload, current_app.config["SECRET_KEY"], algorithm="HS256")
+    return jwt.encode(payload, secret_key, algorithm="HS256")
 
 def token_obrigatorio(func):
     @wraps(func)
@@ -20,7 +21,8 @@ def token_obrigatorio(func):
 
         token = auth_header.split()[1]
         try:
-            dados_token = jwt.decode(token, current_app.config["SECRET_KEY"], algorithms=["HS256"])
+            secret_key = current_app.config.get("SECRET_KEY", "feliz-namorado-da-majuzinha")
+            dados_token = jwt.decode(token, secret_key, algorithms=["HS256"])
             request.usuario_logado = dados_token
         except jwt.ExpiredSignatureError:
             return jsonify({"erro": "Token expirado."}), 401
