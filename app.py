@@ -8,98 +8,90 @@ from datetime import datetime, timezone
 from flask_cors import CORS
 from dotenv import load_dotenv
 
-# Carrega as variáveis de ambiente do arquivo .env (local)
+# Carrega variáveis do .env para testes locais
 load_dotenv()
 
-# Importa o módulo de autenticação
+# Importa o módulo de autenticação (auth.py deve estar na mesma pasta)
 from auth import gerar_token, token_obrigatorio
 
-# 1. Configuração do Firebase (Híbrida: Local ou Nuvem)
+# --- 1. CONFIGURAÇÃO DO FIREBASE (NUVEM + LOCAL) ---
 db = None
 try:
     if not firebase_admin._apps:
-        # Tenta carregar da variável de ambiente da Vercel primeiro
-        firebase_creds_json = os.environ.get("FIREBASE_CREDENTIALS")
+        # Tenta carregar da variável de ambiente que você configurou na Vercel
+        firebase_creds_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT")
         
         if firebase_creds_json:
-            # Converte a string JSON da Vercel em um dicionário
             cred_dict = json.loads(firebase_creds_json)
             cred = credentials.Certificate(cred_dict)
             firebase_admin.initialize_app(cred)
             db = firestore.client()
-            print("Firebase conectado via Variável de Ambiente (Vercel)!")
+            print("Firebase: Conectado via FIREBASE_SERVICE_ACCOUNT")
         elif os.path.exists("firebase.json"):
-            # Caso esteja rodando localmente com o arquivo físico
+            # Fallback para teste local
             cred = credentials.Certificate("firebase.json")
             firebase_admin.initialize_app(cred)
             db = firestore.client()
-            print("Firebase conectado via arquivo local (firebase.json)!")
-        else:
-            print("ERRO: Nenhuma credencial do Firebase encontrada (Variável ou Arquivo)!")
+            print("Firebase: Conectado via arquivo local")
             
 except Exception as e:
-    print(f"ERRO ao conectar ao Firebase: {e}")
-    db = None
+    print(f"ERRO de conexão Firebase: {e}")
 
 app = Flask(__name__)
-# Configuração de Segurança - Usa a variável 'SECRET_KEY' da Vercel ou o valor do seu .env [cite: 1]
-app.config["SECRET_KEY"] = os.environ.get('SECRET_KEY', 'sua-chave-secreta-jwt-aqui-mude-em-producao')
+
+# --- 2. CONFIGURAÇÃO DE SEGURANÇA ---
+# Usa a sua frase: 'feliz-namorado-da-majuzinha'
+app.config["SECRET_KEY"] = os.environ.get('SECRET_KEY', 'feliz-namorado-da-majuzinha')
 CORS(app, origins="*")
 
-# Configuração de admin extraída das variáveis de ambiente [cite: 1]
-ADMIN_USERNAME = os.getenv("ADMIN_USERNAME")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
+# Admin Creds (Vercel Variables)
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "maju")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "feliz")
 
-# --- ENDPOINT DE LOGIN ---
+# --- 3. ROTAS DE AUTENTICAÇÃO ---
+
 @app.route('/login', methods=['POST'])
 def login():
     try:
         dados = request.get_json()
-        if not dados:
-            return jsonify({'error': 'Dados não fornecidos'}), 400
+        if not dados: return jsonify({'error': 'Sem dados'}), 400
         
         username = dados.get('username')
         password = dados.get('password')
         
-        if not username or not password:
-            return jsonify({'error': 'Username e password são obrigatórios'}), 400
-        
         if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
             token = gerar_token(username)
             return jsonify({
-                'message': 'Login realizado com sucesso',
+                'message': 'Login realizado',
                 'token': token,
                 'token_type': 'Bearer',
                 'usuario': username
             }), 200
-        else:
-            return jsonify({'error': 'Usuário ou senha inválidos!'}), 401
+        return jsonify({'error': 'Usuário ou senha inválidos!'}), 401
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# --- ENDPOINTS PÚBLICOS ---
+# --- 4. ROTAS PÚBLICAS (VISUALIZAÇÃO) ---
 
 @app.route('/')
 def root():
     return jsonify({
         'api': 'charadas',
-        'version': '1.2',
-        'autor': 'feliz',
         'status': 'online',
-        'auth': 'JWT'
+        'version': '1.2',
+        'mensagem': 'Bem-vindo à API de Charadas!'
     }), 200
 
 @app.route('/charadas', methods=['GET'])
 def get_charadas():
     try:
-        if db is None:
-            return jsonify({'error': 'Firebase não disponível'}), 500
+        if not db: return jsonify({'error': 'DB Offline'}), 500
         charadas = []
-        lista = db.collection('charadas').stream()
-        for item in lista:
-            dados = item.to_dict()
-            dados['id'] = item.id
-            charadas.append(dados)
+        docs = db.collection('charadas').stream()
+        for doc in docs:
+            item = doc.to_dict()
+            item['id'] = doc.id
+            charadas.append(item)
         return jsonify(charadas), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -107,59 +99,50 @@ def get_charadas():
 @app.route('/charadas/aleatoria', methods=['GET'])
 def get_charadas_random():
     try:
-        if db is None:
-            return jsonify({'error': 'Firebase não disponível'}), 500
-        lista = list(db.collection('charadas').stream())
-        if not lista:
-            return jsonify({'error': 'Nenhuma charada encontrada'}), 404
-        escolhida = random.choice(lista)
-        dados = escolhida.to_dict()
-        dados['id'] = escolhida.id
-        return jsonify(dados), 200
+        if not db: return jsonify({'error': 'DB Offline'}), 500
+        docs = list(db.collection('charadas').stream())
+        if not docs: return jsonify({'error': 'Vazio'}), 404
+        escolhida = random.choice(docs)
+        item = escolhida.to_dict()
+        item['id'] = escolhida.id
+        return jsonify(item), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 @app.route('/charadas/<id>', methods=['GET'])
 def get_charada_by_id(id):
     try:
-        if db is None:
-            return jsonify({'error': 'Firebase não disponível'}), 500
-        doc_ref = db.collection('charadas').document(id)
-        doc = doc_ref.get()
+        if not db: return jsonify({'error': 'DB Offline'}), 500
+        doc = db.collection('charadas').document(id).get()
         if doc.exists:
-            dados = doc.to_dict()
-            dados['id'] = doc.id
-            return jsonify(dados), 200
-        return jsonify({'error': 'Charada não encontrada'}), 404
+            item = doc.to_dict()
+            item['id'] = doc.id
+            return jsonify(item), 200
+        return jsonify({'error': 'Não encontrada'}), 404
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# --- ENDPOINTS PRIVADOS ---
+# --- 5. ROTAS PRIVADAS (CRIAÇÃO E EDIÇÃO - REQUER TOKEN) ---
 
 @app.route('/charadas', methods=['POST'])
 @token_obrigatorio
 def create_charada():
     try:
-        if db is None:
-            return jsonify({'error': 'Firebase não disponível'}), 500
+        if not db: return jsonify({'error': 'DB Offline'}), 500
+        dados = request.get_json()
         
-        nova_charada = request.get_json()
-        if not nova_charada or 'pergunta' not in nova_charada or 'resposta' not in nova_charada:
-            return jsonify({'error': 'Campos obrigatórios: pergunta e resposta'}), 400
+        # Lógica de ID Sequencial
+        cont_ref = db.collection('contador').document('controle_id')
+        doc = cont_ref.get()
+        prox_id = (doc.to_dict().get('ultimo_id', 0) if doc.exists else 0) + 1
         
-        contador_ref = db.collection('contador').document('controle_id')
-        contador_doc = contador_ref.get()
-        ultimo_id = contador_doc.to_dict().get('ultimo_id', 0) if contador_doc.exists else 0
+        dados['id'] = prox_id
+        dados['criado_em'] = datetime.now(timezone.utc).isoformat()
         
-        novo_id = ultimo_id + 1
-        nova_charada['id'] = novo_id
-        nova_charada['criado_por'] = request.usuario_logado.get('usuario')
-        nova_charada['criado_em'] = datetime.now(timezone.utc).isoformat()
+        db.collection('charadas').document(str(prox_id)).set(dados)
+        cont_ref.set({'ultimo_id': prox_id})
         
-        db.collection('charadas').document(str(novo_id)).set(nova_charada)
-        contador_ref.set({'ultimo_id': novo_id})
-        
-        return jsonify({'id': novo_id, 'message': 'Criado com sucesso', 'charada': nova_charada}), 201
+        return jsonify({'id': prox_id, 'message': 'Criada com sucesso'}), 201
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -167,32 +150,19 @@ def create_charada():
 @token_obrigatorio
 def create_multiplas_charadas():
     try:
-        if db is None:
-            return jsonify({'error': 'Firebase não disponível'}), 500
-        dados = request.get_json()
-        if not dados or 'charadas' not in dados:
-            return jsonify({'error': 'Campo obrigatório: charadas'}), 400
+        if not db: return jsonify({'error': 'DB Offline'}), 500
+        lista = request.get_json().get('charadas', [])
         
-        charadas_lista = dados['charadas']
-        contador_ref = db.collection('contador').document('controle_id')
-        contador_doc = contador_ref.get()
-        ultimo_id = contador_doc.to_dict().get('ultimo_id', 0) if contador_doc.exists else 0
+        cont_ref = db.collection('contador').document('controle_id')
+        ultimo_id = cont_ref.get().to_dict().get('ultimo_id', 0)
         
-        charadas_adicionadas = []
-        for charada in charadas_lista:
+        for item in lista:
             ultimo_id += 1
-            charada_completa = {
-                'id': ultimo_id,
-                'pergunta': charada['pergunta'],
-                'resposta': charada['resposta'],
-                'criado_por': request.usuario_logado.get('usuario'),
-                'criado_em': datetime.now(timezone.utc).isoformat()
-            }
-            db.collection('charadas').document(str(ultimo_id)).set(charada_completa)
-            charadas_adicionadas.append({'id': ultimo_id, 'pergunta': charada['pergunta']})
-        
-        contador_ref.update({'ultimo_id': ultimo_id})
-        return jsonify({'message': f'{len(charadas_adicionadas)} adicionadas com sucesso', 'adicionadas': len(charadas_adicionadas)}), 201
+            item['id'] = ultimo_id
+            db.collection('charadas').document(str(ultimo_id)).set(item)
+            
+        cont_ref.update({'ultimo_id': ultimo_id})
+        return jsonify({'message': f'{len(lista)} charadas adicionadas'}), 201
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -200,27 +170,19 @@ def create_multiplas_charadas():
 @token_obrigatorio
 def delete_charada(id):
     try:
-        if db is None:
-            return jsonify({'error': 'Firebase não disponível'}), 500
-        doc_ref = db.collection('charadas').document(id)
-        if not doc_ref.get().exists:
-            return jsonify({'error': 'Documento não existe'}), 404
-        doc_ref.delete()
-        return jsonify({'message': f'Charada {id} removida com sucesso'}), 200
+        if not db: return jsonify({'error': 'DB Offline'}), 500
+        db.collection('charadas').document(id).delete()
+        return jsonify({'message': f'Charada {id} removida'}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 @app.route('/status', methods=['GET'])
 def status():
     return jsonify({
-        'api': 'charadas',
         'status': 'online',
-        'firebase': "conectado" if db else "erro",
-        'version': '1.2'
+        'firebase': 'conectado' if db else 'erro',
+        'ambiente': 'producao' if os.environ.get("VERCEL") else 'local'
     }), 200
 
-# Exporta o app para a Vercel
+# Exportação para Vercel
 app.debug = True
-
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
