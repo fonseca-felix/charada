@@ -1,51 +1,51 @@
 import os
 import random
 import firebase_admin
-import json
 from flask import Flask, jsonify, request
 from firebase_admin import credentials, firestore
+import json
 from datetime import datetime, timezone
 from flask_cors import CORS
 from dotenv import load_dotenv
 
-# Carrega variáveis de ambiente de um arquivo .env (apenas para desenvolvimento local)
+# Carrega as variáveis de ambiente do arquivo .env 
 load_dotenv()
 
-# Importa o módulo de autenticação
+# Importa o módulo de autenticação 
 from auth import gerar_token, token_obrigatorio
 
-app = Flask(__name__)
-
-# Configuração de Segurança via Variáveis de Ambiente 
-app.config["SECRET_KEY"] = os.environ.get('SECRET_KEY', 'sua-chave-secreta-jwt-aqui-mude-em-producao')
-CORS(app, origins="*")
-
-# --- CONFIGURAÇÃO DO FIREBASE ADAPTADA PARA NUVEM ---
+# 1. Configuração do Firebase (Adaptada para Vercel e Local) 
 db = None
 try:
-    # Em ambientes serverless como a Vercel, verificamos se o app já existe
     if not firebase_admin._apps:
-        firebase_creds_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT")
+        # Tenta ler da variável da Vercel (conforme sua imagem) 
+        firebase_creds_json = os.environ.get("FIREBASE_CREDENTIALS") or os.environ.get("FIREBASE_SERVICE_ACCOUNT")
         
         if firebase_creds_json:
-            # Converte a string da variável de ambiente para dicionário JSON
             cred_dict = json.loads(firebase_creds_json)
             cred = credentials.Certificate(cred_dict)
             firebase_admin.initialize_app(cred)
             db = firestore.client()
-            print("Firebase conectado via Variável de Ambiente!")
+            print("Firebase conectado com sucesso via Variável de Ambiente!")
         elif os.path.exists("firebase.json"):
-            # Fallback para desenvolvimento local caso o arquivo exista
+            # Fallback para desenvolvimento local 
             cred = credentials.Certificate("firebase.json")
             firebase_admin.initialize_app(cred)
             db = firestore.client()
-            print("Firebase conectado via arquivo local!")
-    else:
-        db = firestore.client()
+            print("Firebase conectado com sucesso via arquivo local!")
+        else:
+            print("ERRO: Nenhuma credencial do Firebase encontrada!")
+            
 except Exception as e:
     print(f"ERRO ao conectar ao Firebase: {e}")
+    db = None
 
-# Configurações de admin vindas do ambiente 
+app = Flask(__name__)
+# Configuração de Segurança 
+app.config["SECRET_KEY"] = os.environ.get('SECRET_KEY', 'sua-chave-secreta-jwt-aqui-mude-em-producao')
+CORS(app, origins="*")
+
+# Configuração de admin 
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
 
@@ -60,6 +60,9 @@ def login():
         username = dados.get('username')
         password = dados.get('password')
         
+        if not username or not password:
+            return jsonify({'error': 'Username e password são obrigatórios'}), 400
+        
         if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
             token = gerar_token(username)
             return jsonify({
@@ -68,16 +71,19 @@ def login():
                 'token_type': 'Bearer',
                 'usuario': username
             }), 200
-        return jsonify({'error': 'Usuário ou senha inválidos!'}), 401
+        else:
+            return jsonify({'error': 'Usuário ou senha inválidos!'}), 401
     except Exception as e:
+        print(f"ERRO em login: {e}")
         return jsonify({'error': str(e)}), 500
 
 # --- ENDPOINTS PÚBLICOS ---
+
 @app.route('/')
 def root():
     return jsonify({
         'api': 'charadas',
-        'version': '1.0',
+        'version': '1.2',
         'autor': 'feliz',
         'status': 'online',
         'auth': 'JWT'
@@ -86,7 +92,8 @@ def root():
 @app.route('/charadas', methods=['GET'])
 def get_charadas():
     try:
-        if db is None: return jsonify({'error': 'Firebase não disponível'}), 500
+        if db is None:
+            return jsonify({'error': 'Firebase não disponível'}), 500
         charadas = []
         lista = db.collection('charadas').stream()
         for item in lista:
@@ -100,9 +107,11 @@ def get_charadas():
 @app.route('/charadas/aleatoria', methods=['GET'])
 def get_charadas_random():
     try:
-        if db is None: return jsonify({'error': 'Firebase não disponível'}), 500
+        if db is None:
+            return jsonify({'error': 'Firebase não disponível'}), 500
         lista = list(db.collection('charadas').stream())
-        if not lista: return jsonify({'error': 'Nenhuma charada encontrada'}), 404
+        if not lista:
+            return jsonify({'error': 'Nenhuma charada encontrada'}), 404
         escolhida = random.choice(lista)
         dados = escolhida.to_dict()
         dados['id'] = escolhida.id
@@ -113,7 +122,8 @@ def get_charadas_random():
 @app.route('/charadas/<id>', methods=['GET'])
 def get_charada_by_id(id):
     try:
-        if db is None: return jsonify({'error': 'Firebase não disponível'}), 500
+        if db is None:
+            return jsonify({'error': 'Firebase não disponível'}), 500
         doc_ref = db.collection('charadas').document(id)
         doc = doc_ref.get()
         if doc.exists:
@@ -124,12 +134,16 @@ def get_charada_by_id(id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# --- ENDPOINTS PRIVADOS ---
+# --- ENDPOINTS PRIVADOS COM JWT ---
+
 @app.route('/charadas', methods=['POST'])
 @token_obrigatorio
 def create_charada():
     try:
-        if db is None: return jsonify({'error': 'Firebase não disponível'}), 500
+        print(f"DEBUG: Recebendo requisição POST /charadas")
+        if db is None:
+            return jsonify({'error': 'Firebase não disponível'}), 500
+        
         nova_charada = request.get_json()
         if not nova_charada or 'pergunta' not in nova_charada or 'resposta' not in nova_charada:
             return jsonify({'error': 'Campos obrigatórios: pergunta e resposta'}), 400
@@ -149,12 +163,13 @@ def create_charada():
         return jsonify({'id': novo_id, 'message': 'Criado com sucesso', 'charada': nova_charada}), 201
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
+    
 @app.route('/charadas/massivas', methods=['POST'])
 @token_obrigatorio
 def create_multiplas_charadas():
     try:
-        if db is None: return jsonify({'error': 'Firebase não disponível'}), 500
+        if db is None:
+            return jsonify({'error': 'Firebase não disponível'}), 500
         dados = request.get_json()
         if not dados or 'charadas' not in dados:
             return jsonify({'error': 'Campo obrigatório: charadas'}), 400
@@ -190,7 +205,7 @@ def patch_charada(id):
         dados_atualizar = request.get_json()
         doc_ref = db.collection('charadas').document(id)
         if not doc_ref.get().exists: return jsonify({'error': 'Não existe'}), 404
-            
+        
         dados_atualizar['atualizado_por'] = request.usuario_logado.get('usuario')
         dados_atualizar['atualizado_em'] = datetime.now(timezone.utc).isoformat()
         doc_ref.update(dados_atualizar)
@@ -229,7 +244,10 @@ def delete_charada(id):
 
 @app.route('/status', methods=['GET'])
 def status():
-    return jsonify({'api': 'charadas', 'status': 'online', 'firebase': "conectado" if db else "erro"}), 200
+    return jsonify({'status': 'online', 'firebase': "conectado" if db else "erro"}), 200
 
-# Necessário para a Vercel exportar a aplicação
+# Adicionado para compatibilidade com Vercel [cite: 1, 3]
 app.debug = True
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5000)
