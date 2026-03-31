@@ -41,12 +41,12 @@ app = Flask(__name__)
 
 # --- 2. CONFIGURAÇÃO DE SEGURANÇA ---
 # Usa a sua frase: 'feliz-namorado-da-majuzinha'
-app.config["SECRET_KEY"] = os.environ.get('SECRET_KEY', 'feliz-namorado-da-majuzinha')
+app.config["SECRET_KEY"] = os.environ.get('SECRET_KEY')
 CORS(app, origins="*")
 
 # Admin Creds (Vercel Variables)
-ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "maju")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "feliz")
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
 
 # --- 3. ROTAS DE AUTENTICAÇÃO ---
 
