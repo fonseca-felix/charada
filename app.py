@@ -46,6 +46,10 @@ app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get('SECRET_KEY', 'sua-chave-secreta-jwt-aqui-mude-em-producao')
 CORS(app, origins="*")
 
+# Configuração de admin extraída das variáveis de ambiente [cite: 1]
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
+
 # --- ENDPOINT DE LOGIN ---
 @app.route('/login', methods=['POST'])
 def login():
