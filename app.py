@@ -4,6 +4,8 @@ import json
 from datetime import datetime, timezone
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+from flasgger import Swagger
+
 
 # Importação condicional do Firebase
 try:
@@ -29,6 +31,14 @@ except ImportError:
         return func
 
 app = Flask(__name__)
+
+# Versão do OpenAPI
+app.config['SWAGGER'] = {
+    'openapi': '3.0.3'
+}
+
+# Chamar o OpenAPI para o codigo
+swagger = Swagger(app, template_file="openapi.yaml")
 
 # Configurações básicas
 app.config["SECRET_KEY"] = os.environ.get('SECRET_KEY')

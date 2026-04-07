@@ -1,0 +1,197 @@
+openapi: 3.0.3
+info:
+  title: Charadas API
+  description: API para gerenciamento de charadas com autenticação e Firebase
+  version: "2.0"
+
+servers:
+  - url: https://charada-orpin.vercel.app/
+    description: Ambiente local
+
+paths:
+  /:
+    get:
+      summary: Status da API
+      responses:
+        "200":
+          description: Informações da API
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  api:
+                    type: string
+                  status:
+                    type: string
+                  firebase:
+                    type: string
+                  auth:
+                    type: string
+                  version:
+                    type: string
+
+  /health:
+    get:
+      summary: Health check da API
+      responses:
+        "200":
+          description: Status detalhado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  firebase:
+                    type: boolean
+                  environment:
+                    type: string
+
+  /login:
+    post:
+      summary: Login de administrador
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+      responses:
+        "200":
+          description: Login bem-sucedido
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  usuario:
+                    type: string
+                  message:
+                    type: string
+        "401":
+          description: Credenciais inválidas
+        "400":
+          description: Dados não fornecidos
+
+  /charadas:
+    get:
+      summary: Listar todas as charadas
+      responses:
+        "200":
+          description: Lista de charadas
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Charada"
+        "503":
+          description: Banco indisponível
+
+    post:
+      summary: Criar nova charada
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "201":
+          description: Charada criada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  message:
+                    type: string
+        "503":
+          description: Banco indisponível
+
+  /charadas/aleatoria:
+    get:
+      summary: Obter charada aleatória
+      responses:
+        "200":
+          description: Charada retornada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Charada"
+        "404":
+          description: Nenhuma charada encontrada
+        "503":
+          description: Banco indisponível
+
+  /charadas/{id}:
+    get:
+      summary: Buscar charada por ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Charada encontrada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Charada"
+        "404":
+          description: Charada não encontrada
+        "503":
+          description: Banco indisponível
+
+    delete:
+      summary: Deletar charada
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Charada removida
+        "503":
+          description: Banco indisponível
+
+components:
+  schemas:
+    Charada:
+      type: object
+      properties:
+        id:
+          oneOf:
+            - type: string
+            - type: integer
+        criado_em:
+          type: string
+          format: date-time
+      additionalProperties: true
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
