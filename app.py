@@ -6,7 +6,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flasgger import Swagger
 
-
+# 
 # Importação condicional do Firebase
 try:
     import firebase_admin
